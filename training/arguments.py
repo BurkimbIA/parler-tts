@@ -338,6 +338,10 @@ class DataTrainingArguments:
         default=False,
         metadata={"help": "Si True, crée le repo en privé si besoin (sinon public)."},
     )
+    custom_hub_token: Optional[str] = field(
+        default=None,
+        metadata={"help": "Hugging Face Hub token (optionnel, pour push sur repo privé/public)."},
+    )
 
 
 @dataclass

@@ -1276,20 +1276,20 @@ def main():
         from huggingface_hub import HfApi
         api = HfApi()
         # Crée le repo si besoin (respecte le flag privé)
-        if not api.repo_exists(data_args.push_to_hub_repo, token=data_args.hub_token):
+        if not api.repo_exists(data_args.push_to_hub_repo, token=data_args.custom_hub_token):
             api.create_repo(
                 name=data_args.push_to_hub_repo.split("/")[-1],
-                token=data_args.hub_token,
+                token=data_args.custom_hub_token,
                 private=data_args.push_to_hub_private,
                 exist_ok=True,
                 repo_type="model"
             )
         # Push du modèle (et du tokenizer si besoin)
-        model.push_to_hub(data_args.push_to_hub_repo, token=data_args.hub_token)
+        model.push_to_hub(data_args.push_to_hub_repo, token=data_args.custom_hub_token)
         if hasattr(prompt_tokenizer, "push_to_hub"):
-            prompt_tokenizer.push_to_hub(data_args.push_to_hub_repo, token=data_args.hub_token)
+            prompt_tokenizer.push_to_hub(data_args.push_to_hub_repo, token=data_args.custom_hub_token)
         if hasattr(description_tokenizer, "push_to_hub"):
-            description_tokenizer.push_to_hub(data_args.push_to_hub_repo, token=data_args.hub_token)
+            description_tokenizer.push_to_hub(data_args.push_to_hub_repo, token=data_args.custom_hub_token)
         logger.info("Model pushed to Hugging Face Hub.")
 
 

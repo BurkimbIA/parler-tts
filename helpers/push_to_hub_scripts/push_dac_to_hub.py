@@ -22,5 +22,6 @@ model = dac.DAC.load(model_path)
 hf_dac = DACModel(DACConfig())
 hf_dac.model.load_state_dict(model.state_dict())
 
-hf_dac.push_to_hub("parler-tts/dac_44khZ_8kbps")
-EncodecFeatureExtractor(sampling_rate=44100).push_to_hub("parler-tts/dac_44khZ_8kbps")
+hf_dac.push_to_hub("parler-tts/dac_44khZ_8kbps", token="<YOUR_TOKEN>")
+EncodecFeatureExtractor(sampling_rate=44100).push_to_hub("parler-tts/dac_44khZ_8kbps", token="<YOUR_TOKEN>")
+# Remplace <YOUR_TOKEN> par ton token Hugging Face si besoin de repo privé
