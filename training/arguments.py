@@ -314,6 +314,30 @@ class DataTrainingArguments:
         default=2,
         metadata={"help": ("Pad to multiple of for tokenizers.")},
     )
+    aws_access_key_id: Optional[str] = field(
+        default=None,
+        metadata={"help": "AWS access key ID for S3 storage (optionnel, pour lecture/écriture S3)."},
+    )
+    aws_secret_access_key: Optional[str] = field(
+        default=None,
+        metadata={"help": "AWS secret access key for S3 storage (optionnel, pour lecture/écriture S3)."},
+    )
+    aws_endpoint_url: Optional[str] = field(
+        default=None,
+        metadata={"help": "AWS S3 endpoint URL (optionnel, pour S3 compatible storage)."},
+    )
+    hub_token: Optional[str] = field(
+        default=None,
+        metadata={"help": "Hugging Face Hub token (optionnel, pour push sur repo privé/public)."},
+    )
+    push_to_hub_repo: Optional[str] = field(
+        default=None,
+        metadata={"help": "Repo Hugging Face pour push du modèle (ex: username/repo_name)."},
+    )
+    push_to_hub_private: bool = field(
+        default=False,
+        metadata={"help": "Si True, crée le repo en privé si besoin (sinon public)."},
+    )
 
 
 @dataclass

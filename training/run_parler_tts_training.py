@@ -225,11 +225,37 @@ def main():
 
     # 2. Now, let's load the dataset
 
+    # --- S3 storage options ---
+    storage_options = None
+    if data_args.aws_access_key_id and data_args.aws_secret_access_key:
+        storage_options = {
+            "key": data_args.aws_access_key_id,
+            "secret": data_args.aws_secret_access_key,
+        }
+        if data_args.aws_endpoint_url:
+            storage_options["client_kwargs"] = {"endpoint_url": data_args.aws_endpoint_url}
+        logger.info(f"Using S3 storage options{' with custom endpoint: ' + data_args.aws_endpoint_url if data_args.aws_endpoint_url else ''}")
+    elif data_args.aws_access_key_id or data_args.aws_secret_access_key or data_args.aws_endpoint_url:
+        logger.warning("Partial S3 credentials provided. Both aws_access_key_id and aws_secret_access_key are required for S3 storage.")
+
+    # --- Dataset loading/saving with S3 support ---
     if data_args.save_to_disk is not None:
         os.makedirs(data_args.save_to_disk, exist_ok=True)
 
-    # assume that the dataset has been saved to `save_to_disk` if the latter is not empty
-    dataset_was_precomputed = len(os.listdir(data_args.save_to_disk)) > 0
+    dataset_was_precomputed = False
+    if data_args.save_to_disk is not None:
+        # Support S3 loading
+        if storage_options:
+            try:
+                vectorized_datasets = datasets.load_from_disk(data_args.save_to_disk, storage_options=storage_options)
+                dataset_was_precomputed = True
+            except Exception as e:
+                logger.warning(f"Could not load dataset from S3/disk: {e}")
+        else:
+            if len(os.listdir(data_args.save_to_disk)) > 0:
+                vectorized_datasets = datasets.load_from_disk(data_args.save_to_disk)
+                dataset_was_precomputed = True
+
     if dataset_was_precomputed:
         with accelerator.local_main_process_first():
             vectorized_datasets = datasets.load_from_disk(data_args.save_to_disk)
@@ -1243,6 +1269,28 @@ def main():
             break
 
     accelerator.end_training()
+
+    # --- Push model to Hugging Face Hub (private/public) ---
+    if data_args.push_to_hub_repo:
+        logger.info(f"Pushing model to Hugging Face Hub repo: {data_args.push_to_hub_repo} (private={data_args.push_to_hub_private})")
+        from huggingface_hub import HfApi
+        api = HfApi()
+        # Crée le repo si besoin (respecte le flag privé)
+        if not api.repo_exists(data_args.push_to_hub_repo, token=data_args.hub_token):
+            api.create_repo(
+                name=data_args.push_to_hub_repo.split("/")[-1],
+                token=data_args.hub_token,
+                private=data_args.push_to_hub_private,
+                exist_ok=True,
+                repo_type="model"
+            )
+        # Push du modèle (et du tokenizer si besoin)
+        model.push_to_hub(data_args.push_to_hub_repo, token=data_args.hub_token)
+        if hasattr(prompt_tokenizer, "push_to_hub"):
+            prompt_tokenizer.push_to_hub(data_args.push_to_hub_repo, token=data_args.hub_token)
+        if hasattr(description_tokenizer, "push_to_hub"):
+            description_tokenizer.push_to_hub(data_args.push_to_hub_repo, token=data_args.hub_token)
+        logger.info("Model pushed to Hugging Face Hub.")
 
 
 if __name__ == "__main__":
