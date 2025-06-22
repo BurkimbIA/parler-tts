@@ -326,10 +326,6 @@ class DataTrainingArguments:
         default=None,
         metadata={"help": "AWS S3 endpoint URL (optionnel, pour S3 compatible storage)."},
     )
-    hub_token: Optional[str] = field(
-        default=None,
-        metadata={"help": "Hugging Face Hub token (optionnel, pour push sur repo privé/public)."},
-    )
     push_to_hub_repo: Optional[str] = field(
         default=None,
         metadata={"help": "Repo Hugging Face pour push du modèle (ex: username/repo_name)."},
@@ -337,10 +333,6 @@ class DataTrainingArguments:
     push_to_hub_private: bool = field(
         default=False,
         metadata={"help": "Si True, crée le repo en privé si besoin (sinon public)."},
-    )
-    custom_hub_token: Optional[str] = field(
-        default=None,
-        metadata={"help": "Hugging Face Hub token (optionnel, pour push sur repo privé/public)."},
     )
 
 
