@@ -286,6 +286,7 @@ def main():
                 audio_column_name=data_args.target_audio_column_name,
                 sampling_rate=sampling_rate,
                 logger=logger,
+                storage_options=storage_options,
                 # streaming=data_args.streaming, TODO(SG): optionally enable streaming mode
             )
 
@@ -317,6 +318,7 @@ def main():
                 audio_column_name=data_args.target_audio_column_name,
                 sampling_rate=sampling_rate,
                 logger=logger,
+                storage_options=storage_options,
                 # streaming=data_args.streaming, TODO(SG): optionally enable streaming mode
             )
 

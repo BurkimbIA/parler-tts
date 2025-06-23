@@ -172,6 +172,15 @@ def convert_dataset_str_to_list(
     return dataset_names_dict
 
 
+def smart_load_dataset(name, config=None, split=None, storage_options=None, **kwargs):
+    from datasets import load_dataset, load_from_disk
+
+    if name.startswith("s3://") or name.startswith("/") or name.startswith("./"):
+        return load_from_disk(name, storage_options=storage_options)
+    else:
+        return load_dataset(name, config, split=split, **kwargs)
+
+
 def load_multiple_datasets(
     accelerator: Accelerator,
     dataset_names: Union[List, str],
@@ -189,6 +198,7 @@ def load_multiple_datasets(
     sampling_rate: Optional[int] = None,
     audio_column_name: Optional[str] = None,
     logger: Optional[logging.Logger] = None,
+    storage_options: Optional[dict] = None,
     **kwargs,
 ) -> Union[Dataset, IterableDataset]:
     dataset_names_dict = convert_dataset_str_to_list(
@@ -205,10 +215,11 @@ def load_multiple_datasets(
     # iterate over the datasets we want to interleave
     for dataset_dict in tqdm(dataset_names_dict, desc="Combining datasets..."):
         with accelerator.local_main_process_first():
-            dataset = load_dataset(
+            dataset = smart_load_dataset(
                 dataset_dict["name"],
-                dataset_dict["config"],
+                config=dataset_dict["config"],
                 split=dataset_dict["split"],
+                storage_options=storage_options,
                 streaming=streaming,
                 **kwargs,
             )
@@ -223,10 +234,11 @@ def load_multiple_datasets(
                 logger.info(
                     f'Merging {dataset_dict["name"]} - {dataset_dict["split"]} with {metadata_dataset_name} - {dataset_dict["split"]}'
                 )
-                metadata_dataset = load_dataset(
+                metadata_dataset = smart_load_dataset(
                     metadata_dataset_name,
-                    dataset_dict["config"],
+                    config=dataset_dict["config"],
                     split=dataset_dict["split"],
+                    storage_options=storage_options,
                     streaming=streaming,
                     **kwargs,
                 )
