@@ -632,6 +632,7 @@ def main():
             vectorized_datasets.save_to_disk(
                 data_args.save_to_disk,
                 num_proc=min(data_args.preprocessing_num_workers, len(vectorized_datasets["eval"]) - 1),
+                storage_options=storage_options,
             )
         accelerator.wait_for_everyone()
         logger.info(f"Dataset saved at {data_args.save_to_disk}")
