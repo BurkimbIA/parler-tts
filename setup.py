@@ -37,6 +37,7 @@ _extras_training_deps = [
     "wandb",
     "accelerate",
     "evaluate",
+    "s3fs",
     "datasets[audio]>=2.14.5",
 ]
 
