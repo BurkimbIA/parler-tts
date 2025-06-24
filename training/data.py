@@ -177,9 +177,8 @@ def smart_load_dataset(name, config=None, split=None, storage_options=None, **kw
 
     if name.startswith("s3://") or name.startswith("/") or name.startswith("./"):
         ds = load_from_disk(name, storage_options=storage_options)
-        # Always return a DatasetDict with 'train' if not already a dict
-        if not isinstance(ds, DatasetDict):
-            ds = DatasetDict({"train": ds})
+        if  isinstance(ds, DatasetDict):
+            return ds["train"]
         return ds
     else:
         return load_dataset(name, config, split=split, **kwargs)
