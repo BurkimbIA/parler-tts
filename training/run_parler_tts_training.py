@@ -834,7 +834,7 @@ def main():
             repo_name = training_args.hub_model_id
             if repo_name is None:
                 repo_name = Path(training_args.output_dir).absolute().name
-            repo_id = api.create_repo(repo_name, exist_ok=True).repo_id
+            repo_id = api.create_repo(repo_id=repo_name, exist_ok=True).repo_id
 
             with open(os.path.join(training_args.output_dir, ".gitignore"), "w+") as gitignore:
                 if "wandb" not in gitignore:
@@ -1281,7 +1281,7 @@ def main():
         # Crée le repo si besoin (respecte le flag privé)
         if not api.repo_exists(data_args.push_to_hub_repo):
             api.create_repo(
-                name=data_args.push_to_hub_repo.split("/")[-1],
+                repo_id=data_args.push_to_hub_repo,
                 private=data_args.push_to_hub_private,
                 exist_ok=True,
                 repo_type="model"
