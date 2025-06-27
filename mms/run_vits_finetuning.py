@@ -37,6 +37,11 @@ from transformers.utils import send_example_telemetry
 from utils import plot_alignment_to_numpy, plot_spectrogram_to_numpy, VitsDiscriminator, VitsModelForPreTraining, VitsFeatureExtractor, slice_segments, VitsConfig, uromanize
 
 
+# --- MMS TTS detection ---
+def is_mms_tts_model(model_name):
+    return "mms-tts" in model_name.lower()
+
+
 if is_wandb_available():
     import wandb
 
@@ -540,12 +545,7 @@ def main():
     # We now keep distinct sets of args, for a cleaner separation of concerns.
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, VITSTrainingArguments))
 
-    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
-        # If we pass only one argument to the script and it's the path to a json file,
-        # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
-    else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses() if not (len(sys.argv) == 2 and sys.argv[1].endswith(".json")) else parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
@@ -687,13 +687,21 @@ def main():
         trust_remote_code=model_args.trust_remote_code,
     )
 
-    feature_extractor = VitsFeatureExtractor.from_pretrained(
-        model_args.feature_extractor_name if model_args.feature_extractor_name else model_args.model_name_or_path,
-        cache_dir=model_args.cache_dir,
-        revision=model_args.model_revision,
-        token=model_args.token,
-        trust_remote_code=model_args.trust_remote_code,
-    )
+    # --- MMS TTS detection ---
+    is_mms_tts = is_mms_tts_model(model_args.model_name_or_path)
+
+    # --- Conditional feature extractor loading ---
+    if not is_mms_tts:
+        feature_extractor = VitsFeatureExtractor.from_pretrained(
+            model_args.feature_extractor_name if model_args.feature_extractor_name else model_args.model_name_or_path,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            token=model_args.token,
+            trust_remote_code=model_args.trust_remote_code,
+        )
+    else:
+        feature_extractor = None
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
@@ -706,7 +714,7 @@ def main():
 
     # 6. Resample speech dataset if necessary
     dataset_sampling_rate = next(iter(raw_datasets.values())).features[data_args.audio_column_name].sampling_rate
-    if dataset_sampling_rate != feature_extractor.sampling_rate:
+    if feature_extractor is not None and dataset_sampling_rate != feature_extractor.sampling_rate:
         with training_args.main_process_first(desc="resample"):
             raw_datasets = raw_datasets.cast_column(
                 data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
@@ -714,8 +722,8 @@ def main():
 
     # 7. Preprocessing the datasets.
     # We need to read the audio files as arrays and tokenize the targets.
-    max_input_length = data_args.max_duration_in_seconds * feature_extractor.sampling_rate
-    min_input_length = data_args.min_duration_in_seconds * feature_extractor.sampling_rate
+    max_input_length = data_args.max_duration_in_seconds * (feature_extractor.sampling_rate if feature_extractor is not None else dataset_sampling_rate)
+    min_input_length = data_args.min_duration_in_seconds * (feature_extractor.sampling_rate if feature_extractor is not None else dataset_sampling_rate)
     max_tokens_length = data_args.max_tokens_length
     audio_column_name = data_args.audio_column_name
     num_workers = data_args.preprocessing_num_workers
@@ -768,34 +776,30 @@ def main():
                 new_num_speakers = len(speaker_id_dict)
 
     def prepare_dataset(batch):
-        # process target audio
         sample = batch[audio_column_name]
-        audio_inputs = feature_extractor(
-            sample["array"],
-            sampling_rate=sample["sampling_rate"],
-            return_attention_mask=False,
-            do_normalize=do_normalize,
-        )
-
-        batch["labels"] = audio_inputs.get("input_features")[0]
-
-        # process text inputs
+        if feature_extractor is not None:
+            audio_inputs = feature_extractor(
+                sample["array"],
+                sampling_rate=sample["sampling_rate"],
+                return_attention_mask=False,
+                do_normalize=do_normalize,
+            )
+            batch["labels"] = audio_inputs.get("input_features")[0]
+            batch["mel_scaled_input_features"] = audio_inputs.get("mel_scaled_input_features")[0]
+        else:
+            # For MMS TTS: use raw waveform as labels, and set mel_scaled_input_features to waveform or zeros
+            batch["labels"] = np.array(sample["array"], dtype=np.float32)
+            batch["mel_scaled_input_features"] = np.array(sample["array"], dtype=np.float32)
         input_str = batch[text_column_name].lower() if do_lower_case else batch[text_column_name]
-        
         if is_uroman:
             input_str = uromanize(input_str, uroman_path=uroman_path)
         string_inputs = tokenizer(input_str, return_attention_mask=False)
-
         batch[model_input_name] = string_inputs.get("input_ids")[: max_tokens_length + 1]
         batch["waveform_input_length"] = len(sample["array"])
         batch["tokens_input_length"] = len(batch[model_input_name])
         batch["waveform"] = batch[audio_column_name]["array"]
-
-        batch["mel_scaled_input_features"] = audio_inputs.get("mel_scaled_input_features")[0]
-
         if speaker_id_column_name is not None:
             if new_num_speakers > 1:
-                # align speaker_id to [0, num_speaker_id-1].
                 batch["speaker_id"] = speaker_id_dict.get(batch[speaker_id_column_name], 0)
         return batch
 
@@ -855,50 +859,48 @@ def main():
         trust_remote_code=model_args.trust_remote_code,
     )
 
-    
-    with training_args.main_process_first(desc="apply_weight_norm"):
-        # apply weight norms
-        model.decoder.apply_weight_norm()
-        for flow in model.flow.flows:
-            torch.nn.utils.weight_norm(flow.conv_pre)
-            torch.nn.utils.weight_norm(flow.conv_post)
-
-        # override speaker embeddings if necessary
-        if model_args.override_speaker_embeddings and data_args.speaker_id_column_name is not None:
-            if new_num_speakers != num_speakers and new_num_speakers > 1:
-                speaker_embedding_size = config.speaker_embedding_size if config.speaker_embedding_size > 1 else 256
-                logger.info(
-                    f"Resize speaker emeddings from {num_speakers} to {new_num_speakers} with embedding size {speaker_embedding_size}."
-                )
-                model.resize_speaker_embeddings(new_num_speakers, speaker_embedding_size)
-            elif new_num_speakers == 1:
-                logger.info("Only one speaker detected on the training set. Embeddings are not reinitialized.")
-            else:
-                logger.info(
-                    "Same number of speakers on the new dataset than on the model. Embeddings are not reinitialized."
-                )
-
-        # override token embeddings if necessary
-        if model_args.override_vocabulary_embeddings:
-            new_num_tokens = len(tokenizer)
-            model.resize_token_embeddings(new_num_tokens, pad_to_multiple_of=2)
-
     # 9. Save configs
     # make sure all processes wait until data is saved
     with training_args.main_process_first():
         # only the main process saves them
         if is_main_process(training_args.local_rank):
             # save feature extractor, tokenizer and config
-            feature_extractor.save_pretrained(training_args.output_dir)
+            if feature_extractor is not None:
+                feature_extractor.save_pretrained(training_args.output_dir)
             tokenizer.save_pretrained(training_args.output_dir)
             config.save_pretrained(training_args.output_dir)
 
     # 10. Define data collator
-    data_collator = DataCollatorTTSWithPadding(
-        tokenizer=tokenizer,
-        feature_extractor=feature_extractor,
-        forward_attention_mask=forward_attention_mask,
-    )
+    @dataclass
+    class SimpleDataCollator:
+        tokenizer: Any
+        forward_attention_mask: bool
+        def __call__(self, features):
+            model_input_name = "input_ids"
+            input_ids = [{model_input_name: feature[model_input_name]} for feature in features]
+            batch = self.tokenizer.pad(input_ids, return_tensors="pt", return_attention_mask=self.forward_attention_mask)
+            batch["waveform"] = torch.nn.utils.rnn.pad_sequence(
+                [torch.tensor(f["waveform"]) for f in features], batch_first=True
+            )
+            batch["labels"] = torch.nn.utils.rnn.pad_sequence(
+                [torch.tensor(f["labels"]) for f in features], batch_first=True
+            )
+            batch["mel_scaled_input_features"] = batch["labels"]
+            batch["speaker_id"] = (
+                torch.tensor([feature["speaker_id"] for feature in features]) if "speaker_id" in features[0] else None
+            )
+            return batch
+    if is_mms_tts:
+        data_collator = SimpleDataCollator(
+            tokenizer=tokenizer,
+            forward_attention_mask=forward_attention_mask,
+        )
+    else:
+        data_collator = DataCollatorTTSWithPadding(
+            tokenizer=tokenizer,
+            feature_extractor=feature_extractor,
+            forward_attention_mask=forward_attention_mask,
+        )
 
     with training_args.main_process_first():
         input_str = data_args.full_generation_sample_text
@@ -978,8 +980,7 @@ def main():
             sampler=eval_sampler,
         )
 
-    model_segment_size = model.segment_size
-    config_segment_size = model.config.segment_size
+    model_segment_size = model.config.segment_size
     sampling_rate = model.config.sampling_rate
 
     # Scheduler and math around the number of training steps.
