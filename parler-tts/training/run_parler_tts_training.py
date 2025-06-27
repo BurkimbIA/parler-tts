@@ -590,9 +590,11 @@ def main():
                 )
                 logger.info(f"Concatenating {split}: {tmp_labels} with {vectorized_datasets[split]}")
                 vectorized_datasets[split] = concatenate_datasets([vectorized_datasets[split], tmp_labels], axis=1)
-
-        accelerator.free_memory()
-        del generate_labels, all_lens
+        try:
+          accelerator.free_memory()
+          del generate_labels, all_lens
+        except:
+          accelerator.free_memory() #lancement en utlisnt cach
 
         with accelerator.local_main_process_first():
             # NOTE: filtering is done at the end because in the `datasets` library, caching audio files is done after most operations
