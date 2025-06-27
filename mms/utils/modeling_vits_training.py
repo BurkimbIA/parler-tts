@@ -194,6 +194,10 @@ def slice_segments(hidden_states, ids_str, segment_size=4):
     # offset indices with ids_str
     indices = indices + ids_str.view(-1, 1, 1)
 
+    # Clamp indices to avoid out-of-bounds errors
+    max_index = hidden_states.size(2) - 1
+    indices = torch.clamp(indices, max=max_index)
+
     # gather indices
     output = torch.gather(hidden_states, dim=2, index=indices)
 
