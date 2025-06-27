@@ -1369,4 +1369,172 @@ def main():
 
                     if accelerator.is_main_process:
                         with torch.no_grad():
-                            speaker_id = None if num_speakers < 2 :
+                            speaker_id = None if num_speakers < 2 else list(range(min(5, num_speakers)))
+                            full_generation = model(**full_generation_sample.to(model.device), speaker_id=speaker_id)
+
+                        generated_audio.append(generated_train_waveform.cpu())
+                        generated_attn.append(padded_attn.cpu())
+                        generated_spec.append(specs.cpu())
+                        target_spec.append(target_specs.cpu())
+
+                logger.info("Validation inference done, now evaluating... ")
+                if accelerator.is_main_process:
+                    generated_audio = [audio.numpy() for audio_batch in generated_audio for audio in audio_batch]
+                    generated_attn = [
+                        plot_alignment_to_numpy(attn.numpy()) for attn_batch in generated_attn for attn in attn_batch
+                    ]
+                    generated_spec = [
+                        plot_spectrogram_to_numpy(attn.numpy()) for attn_batch in generated_spec for attn in attn_batch
+                    ]
+                    target_spec = [
+                        plot_spectrogram_to_numpy(attn.numpy()) for attn_batch in target_spec for attn in attn_batch
+                    ]
+                    full_generation_waveform = full_generation.waveform.cpu().numpy()
+
+                    accelerator.log(val_losses, step=global_step)
+
+                    log_on_trackers(
+                        accelerator.trackers,
+                        generated_audio,
+                        generated_attn,
+                        generated_spec,
+                        target_spec,
+                        full_generation_waveform,
+                        epoch,
+                        sampling_rate,
+                    )
+
+                    logger.info("Validation finished... ")
+
+                accelerator.wait_for_everyone()
+
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
+        epoch = training_args.num_train_epochs if training_args.num_train_epochs else 1
+        eval_steps = training_args.eval_steps if training_args.eval_steps else 1
+
+        # Run a final round of inference.
+        do_eval = training_args.do_eval
+
+        if do_eval:
+            logger.info("Running final validation... ")
+            generated_audio = []
+            generated_attn = []
+            generated_spec = []
+            target_spec = []
+            val_losses = {}
+            for step, batch in enumerate(eval_dataloader):
+                print(
+                    f"VALIDATION - batch {step}, process{accelerator.process_index}, waveform {(batch['waveform'].shape)}, tokens {(batch['input_ids'].shape)}... "
+                )
+                with torch.no_grad():
+                    model_outputs_train = model(
+                        input_ids=batch["input_ids"],
+                        attention_mask=batch["attention_mask"],
+                        labels=batch["labels"],
+                        labels_attention_mask=batch["labels_attention_mask"],
+                        speaker_id=batch["speaker_id"],
+                        return_dict=True,
+                        monotonic_alignment_function=maximum_path,
+                    )
+
+                    mel_scaled_labels = batch["mel_scaled_input_features"]
+                    mel_scaled_target = slice_segments(
+                        mel_scaled_labels, model_outputs_train.ids_slice, model_segment_size
+                    )
+                    mel_scaled_generation = feature_extractor._torch_extract_fbank_features(
+                        model_outputs_train.waveform.squeeze(1)
+                    )[1]
+
+                    val_losses = compute_val_metrics_and_losses(
+                        val_losses,
+                        accelerator,
+                        model_outputs_train,
+                        mel_scaled_generation,
+                        mel_scaled_target,
+                        per_device_train_batch_size,
+                        compute_clap_similarity=False,
+                    )
+                specs = feature_extractor._torch_extract_fbank_features(model_outputs_train.waveform.squeeze(1))[0]
+                padded_attn, specs, target_specs = accelerator.pad_across_processes(
+                    [model_outputs_train.attn.squeeze(1), specs, batch["labels"]], dim=1
+                )
+                padded_attn, specs, target_specs = accelerator.pad_across_processes(
+                    [padded_attn, specs, target_specs], dim=2
+                )
+
+                generated_train_waveform, padded_attn, specs, target_specs = accelerator.gather_for_metrics(
+                    [model_outputs_train.waveform, padded_attn, specs, target_specs]
+                )
+
+                if accelerator.is_main_process:
+                    with torch.no_grad():
+                        speaker_id = None if num_speakers < 2 else list(range(min(5, num_speakers)))
+                        full_generation = model(**full_generation_sample.to(model.device), speaker_id=speaker_id)
+
+                    generated_audio.append(generated_train_waveform.cpu())
+                    generated_attn.append(padded_attn.cpu())
+                    generated_spec.append(specs.cpu())
+                    target_spec.append(target_specs.cpu())
+
+            logger.info("Validation inference done, now evaluating... ")
+            if accelerator.is_main_process:
+                generated_audio = [audio.numpy() for audio_batch in generated_audio for audio in audio_batch]
+                generated_attn = [
+                    plot_alignment_to_numpy(attn.numpy()) for attn_batch in generated_attn for attn in attn_batch
+                ]
+                generated_spec = [
+                    plot_spectrogram_to_numpy(attn.numpy()) for attn_batch in generated_spec for attn in attn_batch
+                ]
+                target_spec = [
+                    plot_spectrogram_to_numpy(attn.numpy()) for attn_batch in target_spec for attn in attn_batch
+                ]
+                full_generation_waveform = full_generation.waveform.cpu().numpy()
+
+                log_on_trackers(
+                    accelerator.trackers,
+                    generated_audio,
+                    generated_attn,
+                    generated_spec,
+                    target_spec,
+                    full_generation_waveform,
+                    epoch,
+                    sampling_rate,
+                )
+
+                accelerator.log(val_losses, step=global_step)
+                logger.info("Validation finished... ")
+
+            accelerator.wait_for_everyone()
+
+        # unwrap, save and push final model
+        model = accelerator.unwrap_model(model)
+        discriminator = accelerator.unwrap_model(discriminator)
+
+        model.discriminator = discriminator
+
+        # add weight norms
+        for disc in model.discriminator.discriminators:
+            disc.remove_weight_norm()
+        model.decoder.remove_weight_norm()
+        for flow in model.flow.flows:
+            torch.nn.utils.remove_weight_norm(flow.conv_pre)
+            torch.nn.utils.remove_weight_norm(flow.conv_post)
+
+        model.save_pretrained(training_args.output_dir)
+
+        if training_args.push_to_hub:
+            VitsModel.from_pretrained(training_args.output_dir).push_to_hub(training_args.hub_model_id)
+
+    accelerator.end_training()
+
+    # 13. Push FE and tokenizer
+    if training_args.push_to_hub:
+        feature_extractor.push_to_hub(training_args.hub_model_id)
+        tokenizer.push_to_hub(training_args.hub_model_id)
+
+    logger.info("***** Training / Inference Done *****")
+
+
+if __name__ == "__main__":
+    main()
