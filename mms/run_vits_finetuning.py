@@ -40,7 +40,9 @@ os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 if is_wandb_available():
     import wandb
-
+    wandb_api_key = os.environ.get("WANDB_API_KEY")
+    if wandb_api_key:
+        wandb.login(key=wandb_api_key)
 
 ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
 logger = logging.getLogger(__name__)
