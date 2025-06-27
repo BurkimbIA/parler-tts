@@ -687,6 +687,35 @@ def main():
         trust_remote_code=model_args.trust_remote_code,
     )
 
+    # --- Ajout auto du preprocessor_config.json pour MMS ---
+    import json
+    def is_mms_model(model_name):
+        return "facebook/mms-tts" in model_name
+
+    fe_path = model_args.feature_extractor_name if model_args.feature_extractor_name else model_args.model_name_or_path
+    if is_mms_model(fe_path):
+        if os.path.isdir(fe_path):
+            preproc_config_path = os.path.join(fe_path, "preprocessor_config.json")
+            if not os.path.exists(preproc_config_path):
+                with open(preproc_config_path, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "feature_extractor_type": "VitsFeatureExtractor",
+                        "feature_size": 80,
+                        "hop_length": 256,
+                        "max_wav_value": 32768.0,
+                        "n_fft": 1024,
+                        "padding_side": "right",
+                        "padding_value": 0.0,
+                        "return_attention_mask": False,
+                        "sampling_rate": 16000
+                    }, f, indent=2)
+                logger.info(f"Fichier preprocessor_config.json créé dans {fe_path}")
+        else:
+            logger.warning(
+                f"Impossible de créer preprocessor_config.json pour le modèle MMS distant ({fe_path}). "
+                "Téléchargez d'abord le modèle localement si besoin."
+            )
+
     feature_extractor = VitsFeatureExtractor.from_pretrained(
         model_args.feature_extractor_name if model_args.feature_extractor_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
@@ -978,8 +1007,7 @@ def main():
             sampler=eval_sampler,
         )
 
-    model_segment_size = model.segment_size
-    config_segment_size = model.config.segment_size
+    model_segment_size = model.config.segment_size
     sampling_rate = model.config.sampling_rate
 
     # Scheduler and math around the number of training steps.
