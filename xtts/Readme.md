@@ -81,22 +81,8 @@ Extend the vocabulary and adjust the configuration with:
 python extend_vocab_config.py --output_path=checkpoints/ --metadata_path datasets/metadata_train.csv --language vi --extended_vocab_size 2000
 ```
 
-## 5. DVAE Finetuning (Optional)
 
-To finetune the DVAE, run:
-
-```bash
-CUDA_VISIBLE_DEVICES=0 python train_dvae_xtts.py \
---output_path=checkpoints/ \
---train_csv_path=datasets/metadata_train.csv \
---eval_csv_path=datasets/metadata_eval.csv \
---language="mos" \
---num_epochs=5 \
---batch_size=512 \
---lr=5e-6
-```
-
-## 6. GPT Finetuning
+## 5. GPT Finetuning
 
 For GPT finetuning, execute:
 
@@ -131,7 +117,7 @@ CUDA_VISIBLE_DEVICES=0 python train_gpt_xtts.py \
 --save_step 50000
 ```
 
-## 7. Usage Example
+## 6. Usage Example
 
 Here's a sample code snippet demonstrating how to use the finetuned model:
 
