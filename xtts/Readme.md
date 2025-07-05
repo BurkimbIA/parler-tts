@@ -62,7 +62,10 @@ wavs/yyy.wav|Nice to meet you.|@Y
 wavs/zzz.wav|Good to see you.|@Z
 ```
 
-
+do that use us this
+```python
+python generate_data.py
+```
 Clean your audio remove noise /augment volume
 
 ## 3. Pretrained Model Download
