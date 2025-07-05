@@ -32,7 +32,7 @@ storage_options = {
     "client_kwargs": {"endpoint_url": os.environ["AWS_ENDPOINT_URL_S3"]}
 }
 
-PATH = "s3://burkimbia/audios/final_datasets"
+PATH = "s3://burkimbia/audios/final_dataset"
 ds = load_from_disk(PATH, storage_options=storage_options)
 ds = ds.train_test_split(test_size=0.002, seed=42)
 
