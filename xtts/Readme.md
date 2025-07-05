@@ -182,6 +182,3 @@ out_wav = torch.cat(wav_chunks, dim=0).unsqueeze(0).cpu()
 from IPython.display import Audio
 Audio(out_wav, rate=24000)
 ```
-
-
-Update: If you have enough short texts in your datasets (about 20 hours), you do not need to finetune DVAE.
