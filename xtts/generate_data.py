@@ -67,14 +67,17 @@ def export_data(split, csv_path):
                 sampling_rate = sample['audio']['sampling_rate']
                 text = sample['text']
                 text = re.sub(r'^\d+\s+', '', text)
-                speaker = sample['speaker_name'].replace(" ", "")
-
+                speaker = (sample['speaker_name'].replace(" ", "")).upper()
+                speaker = f"@{speaker}"
+                print(speaker)
                 wav_filename = f"{i:06d}.wav"
                 wav_path = os.path.join(wavs_dir, wav_filename)
+        
 
                 write(wav_path, sampling_rate, np.array(audio_array, dtype=np.float32))
 
                 writer.writerow([f"wavs/{wav_filename}", text, speaker])
+                print(speaker)
                 print(f"Exported {i}")
             except Exception as e:
                 # Skip broken audio and continue
