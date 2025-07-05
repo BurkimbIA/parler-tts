@@ -1,5 +1,5 @@
 
-#pip install datasets s3fs soundfile
+#pip install datasets["audio"] s3fs soundfile
 
 from datasets import load_dataset
 
